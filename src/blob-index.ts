@@ -234,6 +234,12 @@ export class BlobIndex {
       .map(row => ({ tier: String(row.tier), state: row.state as ReplicaState, blobs: Number(row.blobs), bytes: Number(row.bytes) }));
   }
 
+  /** How many blobs are recorded, and their bytes. */
+  totals(): { blobs: number; bytes: number } {
+    const row = this.#db.prepare('SELECT COUNT(*) AS blobs, COALESCE(SUM(size), 0) AS bytes FROM blobs').get()!;
+    return { blobs: Number(row.blobs), bytes: Number(row.bytes) };
+  }
+
   /** Every recorded CID, in no particular order. */
   *cids(): Iterable<string> {
     for (const row of this.#db.prepare('SELECT cid FROM blobs').iterate()) yield String(row.cid);
