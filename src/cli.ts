@@ -240,7 +240,7 @@ export async function main(args: string[], terminal = new Terminal()): Promise<n
       case 'remote list': {
         want(0, '');
         const config = await PorterConfig.load(root);
-        const credentials = new FileCredentialStore(root);
+        const credentials = new FileCredentialStore();
         const remotes = await Promise.all(config.remotes.map(async remote => ({ ...remote, keys: !!(await credentials.get(remote.name)) })));
         terminal.result(command, { remotes }, () =>
           remotes.length
@@ -260,7 +260,7 @@ export async function main(args: string[], terminal = new Terminal()): Promise<n
         const remote: RemoteConfig = { name, endpoint, bucket: values.bucket, region: values.region ?? 'auto', newBlobs: values['no-new'] ? 'none' : 'all', ...(values.prefix && { prefix: values.prefix }) };
         config.addRemote(remote);
         const keys = await readKeys(terminal);
-        await new FileCredentialStore(root).set(name, keys);
+        await new FileCredentialStore().set(name, keys);
         await config.save();
         return await withPorter(root, porter => {
           const unqueued = porter.local.index.unqueued(name);
@@ -280,7 +280,7 @@ export async function main(args: string[], terminal = new Terminal()): Promise<n
         const config = await PorterConfig.load(root);
         config.removeRemote(rest[0]!);
         await config.save();
-        await new FileCredentialStore(root).delete(rest[0]!);
+        await new FileCredentialStore().delete(rest[0]!);
         terminal.result(command, { removed: rest[0] }, () => [
           terminal.summary('success', `Remote ${rest[0]} removed`),
           ...terminal.hint('Nothing in its bucket was deleted. Its upload history stays in the index.'),

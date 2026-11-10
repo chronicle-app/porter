@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { FileCredentialStore, Porter, PorterConfig, type RemoteConfig } from '../src/index.js';
+import { FileCredentialStore, Porter, PorterConfig, defaultRoot, type RemoteConfig } from '../src/index.js';
 import { FakeS3 } from './fake-s3.js';
 import { tempDir } from './helpers.js';
 
@@ -19,7 +19,7 @@ async function configure(root: string, remotes: RemoteConfig[], withKeys = remot
   const config = await PorterConfig.load(root);
   for (const r of remotes) config.addRemote(r);
   await config.save();
-  const credentials = new FileCredentialStore(root);
+  const credentials = new FileCredentialStore();
   for (const name of withKeys) await credentials.set(name, { accessKeyId: 'test', secretAccessKey: 'test' });
 }
 
@@ -53,7 +53,7 @@ describe('PorterConfig', () => {
 describe('FileCredentialStore', () => {
   it('keeps keys in a file only its owner can read', async () => {
     const root = await tempDir();
-    const store = new FileCredentialStore(root);
+    const store = new FileCredentialStore();
     await store.set('r2', { accessKeyId: 'id', secretAccessKey: 'secret' });
     await store.set('s3', { accessKeyId: 'id2', secretAccessKey: 'secret2' });
     expect(await store.get('r2')).toEqual({ accessKeyId: 'id', secretAccessKey: 'secret' });
@@ -62,6 +62,35 @@ describe('FileCredentialStore', () => {
     expect(await store.get('r2')).toBeUndefined();
     expect(await store.get('s3')).toBeDefined();
     expect((await stat(store.path)).mode & 0o777).toBe(0o600);
+  });
+});
+
+describe('Chronicle directories', () => {
+  it('keeps Porter in Chronicle\'s data directory and keys in its config directory', () => {
+    expect(defaultRoot()).toBe(join(process.env.CHRONICLE_DATA_DIR!, 'porter'));
+    expect(new FileCredentialStore().path).toBe(join(process.env.CHRONICLE_CONFIG_DIR!, 'porter-credentials.json'));
+  });
+
+  it('uses Chronicle Dev under the dev profile', () => {
+    const saved = { data: process.env.CHRONICLE_DATA_DIR, profile: process.env.CHRONICLE_PROFILE };
+    try {
+      delete process.env.CHRONICLE_DATA_DIR;
+      process.env.CHRONICLE_PROFILE = 'dev';
+      expect(defaultRoot()).toMatch(/(Chronicle Dev|chronicle-dev)[\\/]porter$/);
+      process.env.CHRONICLE_PROFILE = 'production';
+      expect(defaultRoot()).toMatch(/(Chronicle|chronicle)[\\/]porter$/);
+      expect(defaultRoot()).not.toMatch(/Dev|dev/);
+    } finally {
+      process.env.CHRONICLE_DATA_DIR = saved.data;
+      if (saved.profile === undefined) delete process.env.CHRONICLE_PROFILE;
+      else process.env.CHRONICLE_PROFILE = saved.profile;
+    }
+  });
+
+  it('opens the default root when none is given', async () => {
+    const porter = await Porter.open();
+    expect(porter.root).toBe(join(process.env.CHRONICLE_DATA_DIR!, 'porter'));
+    porter.close();
   });
 });
 

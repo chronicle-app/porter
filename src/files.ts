@@ -3,14 +3,39 @@ import { mkdir, open, readFile, rename, rm } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 
+// Chronicle's directories, copied from Chronicle (chronicleDataDir in
+// apps/cli/src/config/dataDir.ts, chronicleConfigDir in @chronicle.app/auth)
+// until they live in a shared package. Keep them in step.
+
 /**
- * Where Porter keeps its blobs, index, config, and secrets unless told
- * otherwise: the platform's application-data directory.
+ * Chronicle's data directory: `CHRONICLE_DATA_DIR`, else the platform's
+ * application-data directory, under "Chronicle Dev" when
+ * `CHRONICLE_PROFILE=dev` so development never touches real data.
+ */
+export function chronicleDataDir(): string {
+  if (process.env.CHRONICLE_DATA_DIR) return process.env.CHRONICLE_DATA_DIR;
+  const profile = process.env.CHRONICLE_PROFILE?.toLowerCase();
+  const dev = profile === 'dev' || profile === 'development';
+  if (process.platform === 'darwin') return join(homedir(), 'Library', 'Application Support', dev ? 'Chronicle Dev' : 'Chronicle');
+  const base = process.env.XDG_DATA_HOME || (process.platform === 'win32' && process.env.LOCALAPPDATA) || join(homedir(), '.local', 'share');
+  return join(base, dev ? 'chronicle-dev' : 'chronicle');
+}
+
+/** Chronicle's config directory, where it keeps credentials: `CHRONICLE_CONFIG_DIR`, else XDG config. */
+export function chronicleConfigDir(): string {
+  return (
+    process.env.CHRONICLE_CONFIG_DIR ||
+    join(process.env.XDG_CONFIG_HOME || (process.platform === 'win32' && process.env.LOCALAPPDATA) || join(homedir(), '.config'), 'chronicle')
+  );
+}
+
+/**
+ * Where Porter keeps its blobs, index, settings, and server secrets unless
+ * told otherwise: `porter` in Chronicle's data directory. Remote keys live
+ * apart from it, in Chronicle's config directory.
  */
 export function defaultRoot(): string {
-  if (process.platform === 'darwin') return join(homedir(), 'Library', 'Application Support', 'Porter');
-  if (process.platform === 'win32') return join(process.env.APPDATA ?? join(homedir(), 'AppData', 'Roaming'), 'Porter');
-  return join(process.env.XDG_DATA_HOME || join(homedir(), '.local', 'share'), 'porter');
+  return join(chronicleDataDir(), 'porter');
 }
 
 /** Parse a JSON file, or `undefined` if it doesn't exist. */

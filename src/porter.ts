@@ -10,7 +10,7 @@ import { S3ByteStore } from './s3.js';
 export interface OpenOptions {
   /** Porter's root directory. Defaults to the platform's application-data directory. */
   root?: string;
-  /** Where remotes' keys are kept. Defaults to `porter-credentials.json` in the root. */
+  /** Where remotes' keys are kept. Defaults to `porter-credentials.json` in Chronicle's config directory. */
   credentials?: CredentialStore;
 }
 
@@ -33,7 +33,7 @@ export class Porter {
     const root = options.root ?? defaultRoot();
     await mkdir(root, { recursive: true });
     const config = await PorterConfig.load(root);
-    const credentials = options.credentials ?? new FileCredentialStore(root);
+    const credentials = options.credentials ?? new FileCredentialStore();
     const remotes: Remote[] = [];
     const missing: string[] = [];
     for (const remote of config.remotes) {

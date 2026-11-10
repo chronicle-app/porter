@@ -25,7 +25,7 @@ async function withRemote(root: string) {
   const config = await PorterConfig.load(root);
   config.addRemote({ name: 'r2', endpoint, bucket: fake.bucket, region: 'auto', prefix: `${randomUUID()}/`, newBlobs: 'all' });
   await config.save();
-  await new FileCredentialStore(root).set('r2', { accessKeyId: 'test', secretAccessKey: 'test' });
+  await new FileCredentialStore().set('r2', { accessKeyId: 'test', secretAccessKey: 'test' });
 }
 
 async function start(root: string, options: Parameters<typeof serve>[0] = {}) {

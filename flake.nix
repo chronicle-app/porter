@@ -35,9 +35,11 @@
     {
       devShells = forAllSystems (pkgs: {
         default = pkgs.devshell.mkShell {
-          name = "porter";
+          # Not "porter": devshell puts an entrypoint named after the shell on
+          # PATH, which would hide the porter command below.
+          name = "porter-dev";
           motd = ''
-            {bold}porter{reset}: blob store and RASL server for Chronicle
+            {bold}porter-dev{reset}: blob store and RASL server for Chronicle
             $(type -p menu &>/dev/null && menu)
           '';
           packages = with pkgs; [
@@ -47,7 +49,21 @@
             # in nixpkgs and MinIO is archived; versitygw builds everywhere.
             versitygw
           ];
+          env = [
+            {
+              # Chronicle's dev profile: porter here uses "Chronicle Dev/porter",
+              # never the real data an installed Chronicle uses.
+              name = "CHRONICLE_PROFILE";
+              value = "dev";
+            }
+          ];
           commands = [
+            {
+              category = "run";
+              name = "porter";
+              help = "Build, then run porter from this checkout (dev profile)";
+              command = ''npm run --prefix "$PRJ_ROOT" build --silent && node "$PRJ_ROOT/bin/porter.js" "$@"'';
+            }
             {
               category = "develop";
               name = "setup";

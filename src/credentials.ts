@@ -1,5 +1,5 @@
 import { join } from 'node:path';
-import { readJson, writeJson } from './files.js';
+import { chronicleConfigDir, readJson, writeJson } from './files.js';
 
 export interface RemoteCredentials {
   accessKeyId: string;
@@ -14,15 +14,17 @@ export interface CredentialStore {
 }
 
 /**
- * Remotes' keys in `porter-credentials.json` in Porter's root, readable only
- * by its owner (`0600`), as Chronicle keeps its own credentials. The file is
- * not encrypted.
+ * Remotes' keys in `porter-credentials.json`, by default in Chronicle's
+ * config directory beside Chronicle's own `credentials.json`. Like that file
+ * it's readable only by its owner (`0600`) and not encrypted. It's shared by
+ * every Porter root, keyed by remote name.
  */
 export class FileCredentialStore implements CredentialStore {
   readonly path: string;
 
-  constructor(root: string) {
-    this.path = join(root, 'porter-credentials.json');
+  /** @param path The file. Defaults to `porter-credentials.json` in Chronicle's config directory. */
+  constructor(path = join(chronicleConfigDir(), 'porter-credentials.json')) {
+    this.path = path;
   }
 
   async get(remote: string): Promise<RemoteCredentials | undefined> {

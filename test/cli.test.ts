@@ -67,11 +67,11 @@ describe('porter CLI', () => {
     const listed = await json(['remote', 'list', '--home', home]);
     expect(listed.data.remotes).toEqual([expect.objectContaining({ name: 'r2', keys: true })]);
     expect(await readFile(join(home, 'porter-config.json'), 'utf8')).not.toContain('test-secret');
-    expect((await stat(join(home, 'porter-credentials.json'))).mode & 0o777).toBe(0o600);
+    expect((await stat(join(process.env.CHRONICLE_CONFIG_DIR!, 'porter-credentials.json'))).mode & 0o777).toBe(0o600);
 
     expect((await json(['remote', 'remove', 'r2', '--home', home])).code).toBe(0);
     expect((await json(['remote', 'list', '--home', home])).data.remotes).toEqual([]);
-    expect(await readFile(join(home, 'porter-credentials.json'), 'utf8')).not.toContain('test-secret');
+    expect(await readFile(join(process.env.CHRONICLE_CONFIG_DIR!, 'porter-credentials.json'), 'utf8')).not.toContain('test-secret');
   });
 
   it('adds a remote that takes no new blobs', async () => {
