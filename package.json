@@ -1,0 +1,50 @@
+{
+  "name": "@chronicle.app/porter",
+  "version": "0.0.0",
+  "private": true,
+  "description": "A local blob store and RASL server for Chronicle, addressed by DASL CIDs",
+  "keywords": [
+    "dasl",
+    "cid",
+    "rasl",
+    "content-addressing",
+    "blob-store"
+  ],
+  "license": "MIT",
+  "author": "Max Veytsman",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/chronicle-app/porter.git"
+  },
+  "type": "module",
+  "bin": {
+    "porter": "bin/porter.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "import": "./dist/src/index.js"
+    }
+  },
+  "files": [
+    "bin",
+    "dist/src",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "prepare": "npm run build",
+    "pretest": "npm run build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.3",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.7"
+  }
+}
