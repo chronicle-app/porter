@@ -9,21 +9,32 @@ export interface ByteRange {
 /** Bytes to write: a whole buffer, or chunks from a stream such as a Node `Readable`. */
 export type ByteSource = Uint8Array | AsyncIterable<Uint8Array>;
 
+/** What the caller already knows about bytes being written. */
+export interface PutHints {
+  /**
+   * SHA-256 of the whole source. A remote store sends it with the upload so
+   * the server rejects bytes that don't match it; local stores ignore it.
+   */
+  sha256?: Uint8Array;
+}
+
 /**
  * Opaque bytes by key, with ranged reads. Memory, the filesystem, and S3/R2
- * implement this. It never hashes or interprets what it holds; `BlobStore`
- * and, later, `EncryptedStore` choose the keys and check the bytes.
+ * implement this. It doesn't interpret what it holds; `BlobStore` and, later,
+ * `EncryptedStore` choose the keys and check the bytes.
  *
  * Keys are lowercase letters and digits, at least 8 characters, so they're
  * safe as file names and object keys.
  */
 export interface ByteStore {
   /** Store `source` under `key`. Writing a key that already exists keeps the existing bytes. */
-  put(key: string, source: ByteSource): Promise<void>;
+  put(key: string, source: ByteSource, hints?: PutHints): Promise<void>;
   /** Stream the bytes under `key`, or a range of them; `undefined` if absent. */
   read(key: string, range?: ByteRange): Promise<AsyncIterable<Uint8Array> | undefined>;
   /** Size in bytes of what's under `key`; `undefined` if absent. */
   size(key: string): Promise<number | undefined>;
+  /** Every key held, in no particular order. */
+  keys(): AsyncIterable<string>;
 }
 
 /** A write in progress whose key isn't known until all bytes have been seen. */

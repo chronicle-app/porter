@@ -37,7 +37,9 @@ npm run build
   Use `@atcute/cid` for CIDs. Parse strings from outside with `parseCid`, so
   bad input becomes a `CidError` with a code and hint.
 - `ByteStore` holds opaque bytes by key; `BlobStore` names them by CID and
-  checks them. Backends implement `ByteStore`; never hash inside one.
+  checks them. Backends implement `ByteStore` and never decide keys or check
+  content. The S3 store hashes request bodies only to sign them, and takes
+  the blob's own SHA-256 as a hint so the server checks it end to end.
 - Blob files are created only by writing a temp file, fsyncing, and renaming
   it into place. They are never modified afterwards. Anything that replaces
   one must do so from a verified copy.

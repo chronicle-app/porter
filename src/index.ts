@@ -3,6 +3,7 @@ export * from './cid.js';
 export * from './store.js';
 export * from './memory.js';
 export * from './fs.js';
+export * from './s3.js';
 export * from './blobs.js';
 export * from './blob-index.js';
 export * from './local.js';

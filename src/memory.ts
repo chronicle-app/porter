@@ -42,4 +42,8 @@ export class MemoryByteStore implements StagingByteStore {
     checkKey(key);
     return this.#items.get(key)?.length;
   }
+
+  async *keys(): AsyncIterable<string> {
+    yield* [...this.#items.keys()];
+  }
 }

@@ -48,6 +48,7 @@
     "vitest": "^3.2.7"
   },
   "dependencies": {
-    "@atcute/cid": "^2.5.0"
+    "@atcute/cid": "^2.5.0",
+    "aws4fetch": "^1.0.20"
   }
 }

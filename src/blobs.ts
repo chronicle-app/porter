@@ -15,9 +15,10 @@ export class PlainBlobStore implements BlobStore {
   async put(source: ByteSource, options: PutOptions = {}): Promise<{ cid: string; size: number }> {
     const codec = options.codec ?? CODEC_RAW;
     if (source instanceof Uint8Array) {
-      const cid = toString(createSync(codec, source));
+      const parsed = createSync(codec, source);
+      const cid = toString(parsed);
       checkExpected(cid, options.expect);
-      await this.bytes.put(cid, source);
+      await this.bytes.put(cid, source, { sha256: parsed.digest.contents });
       return { cid, size: source.length };
     }
     if (!isStaging(this.bytes)) throw new TypeError('This store needs a whole buffer, not a stream');
