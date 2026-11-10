@@ -11,7 +11,8 @@ import { byteStoreContract } from './contract.js';
 
 // Runs S3ByteStore against a real S3 server: a real bucket when S3_ENDPOINT,
 // S3_ACCESS_KEY, S3_SECRET_KEY, S3_BUCKET (and S3_REGION) are set, otherwise
-// versitygw from the nix dev shell. Skipped when neither is available.
+// versitygw from the nix dev shell. Skipped when neither is available,
+// unless PORTER_REQUIRE_S3_CONFORMANCE is set.
 // Against a real bucket, everything is written under a random prefix and
 // deleted afterwards.
 
@@ -26,6 +27,10 @@ const remote = process.env.S3_ENDPOINT
   : undefined;
 const versitygw = !remote && spawnSync('versitygw', ['--version']).status === 0;
 const target = remote ? `remote ${remote.endpoint}` : 'versitygw';
+// CI sets this so a missing versitygw fails the run instead of skipping the suite.
+if (process.env.PORTER_REQUIRE_S3_CONFORMANCE && !remote && !versitygw) {
+  throw new Error('PORTER_REQUIRE_S3_CONFORMANCE is set but versitygw is not on PATH');
+}
 const MiB = 1024 * 1024;
 
 let config: Omit<S3Options, 'prefix'>;

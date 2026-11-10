@@ -5,6 +5,10 @@ on:
     branches: [main]
   pull_request:
 
+env:
+  # Keep in step with the versitygw in flake.lock.
+  VERSITYGW_VERSION: 1.10.0
+
 jobs:
   test:
     strategy:
@@ -18,6 +22,21 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      - name: Install versitygw for the S3 conformance tests
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          case "$RUNNER_OS" in Linux) os=Linux ;; macOS) os=Darwin ;; esac
+          case "$RUNNER_ARCH" in X64) arch=x86_64 ;; ARM64) arch=arm64 ;; esac
+          name="versitygw_v${VERSITYGW_VERSION}_${os}_${arch}"
+          cd "$RUNNER_TEMP"
+          gh release download "v${VERSITYGW_VERSION}" -R versity/versitygw -p "$name.tar.gz" -p checksums.txt
+          grep " $name.tar.gz\$" checksums.txt | shasum -a 256 -c -
+          tar xzf "$name.tar.gz"
+          echo "$RUNNER_TEMP/$name" >> "$GITHUB_PATH"
+      - run: versitygw --version
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
+        env:
+          PORTER_REQUIRE_S3_CONFORMANCE: '1'
