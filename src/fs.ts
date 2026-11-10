@@ -95,6 +95,25 @@ export class FsByteStore implements StagingByteStore {
     }
   }
 
+  /** Every key with a file, in no particular order. Names that aren't valid keys are skipped. */
+  async *keys(): AsyncIterable<string> {
+    const objects = join(this.root, OBJECTS);
+    let shards: string[];
+    try {
+      shards = await readdir(objects);
+    } catch (error) {
+      if (isMissing(error)) return;
+      throw error;
+    }
+    for (const shard of shards) {
+      const names = await readdir(join(objects, shard)).catch(error => {
+        if (isMissing(error) || (error as NodeJS.ErrnoException).code === 'ENOTDIR') return [];
+        throw error;
+      });
+      for (const name of names) if (/^[a-z0-9]{8,}$/.test(name) && name.slice(-3, -1) === shard) yield name;
+    }
+  }
+
   /**
    * Remove staged files older than `olderThanMs` left by crashed writes.
    * Younger ones may belong to a write still in progress in another process.

@@ -4,3 +4,5 @@ export * from './store.js';
 export * from './memory.js';
 export * from './fs.js';
 export * from './blobs.js';
+export * from './blob-index.js';
+export * from './local.js';
