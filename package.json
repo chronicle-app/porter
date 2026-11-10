@@ -46,5 +46,8 @@
     "@types/node": "^22.20.3",
     "typescript": "^5.9.3",
     "vitest": "^3.2.7"
+  },
+  "dependencies": {
+    "@atcute/cid": "^2.5.0"
   }
 }

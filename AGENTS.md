@@ -34,7 +34,8 @@ npm run build
   Do not add a `docs/` directory.
 - On-disk names (temp files, locks, the index, the token) use `porter-`.
 - Blobs are named by DASL CIDs only: CIDv1, SHA-256, raw or DRISL codec.
-  Reject anything else at the edge.
+  Use `@atcute/cid` for CIDs. Parse strings from outside with `parseCid`, so
+  bad input becomes a `CidError` with a code and hint.
 - `ByteStore` holds opaque bytes by key; `BlobStore` names them by CID and
   checks them. Backends implement `ByteStore`; never hash inside one.
 - Blob files are created only by writing a temp file, fsyncing, and renaming

@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises';
-import { cidForBytes, formatCid } from './cid.js';
+import { CODEC_RAW, createSync, toString } from '@atcute/cid';
 
 const HELP = `Usage: porter COMMAND
 
@@ -16,7 +16,7 @@ export async function main(args: string[]): Promise<number> {
     return 0;
   }
   if (command === 'cid' && rest.length === 1) {
-    process.stdout.write(formatCid(cidForBytes(await readFile(rest[0]!))) + '\n');
+    process.stdout.write(toString(createSync(CODEC_RAW, await readFile(rest[0]!))) + '\n');
     return 0;
   }
   process.stderr.write(`Unknown command ${command}\n${HELP}`);
