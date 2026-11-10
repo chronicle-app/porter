@@ -1,4 +1,5 @@
-import { open, readFile, rm } from 'node:fs/promises';
+import { randomBytes } from 'node:crypto';
+import { link, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { Access } from './access.js';
 import { PorterError } from './errors.js';
@@ -153,10 +154,13 @@ async function acquireLock(root: string): Promise<{ release: () => Promise<void>
   const path = join(root, 'porter-serve.lock');
   const mine = String(process.pid);
   for (let attempt = 0; attempt < 3; attempt++) {
+    // Write the pid first, then link it into place: the lock appears with its
+    // pid already in it, or not at all, so nobody ever reads an empty lock
+    // and mistakes it for one left by a dead process.
+    const temp = `${path}.${mine}.${randomBytes(4).toString('hex')}`;
+    await writeFile(temp, mine, { mode: 0o644, flag: 'wx' });
     try {
-      const file = await open(path, 'wx', 0o644);
-      await file.writeFile(mine);
-      await file.close();
+      await link(temp, path);
       return {
         release: async () => {
           // Only remove the lock if it's still ours.
@@ -165,14 +169,27 @@ async function acquireLock(root: string): Promise<{ release: () => Promise<void>
       };
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+    } finally {
+      await rm(temp, { force: true });
     }
     const holder = Number((await readFile(path, 'utf8').catch(() => '')).trim());
     if (holder && alive(holder)) {
       const info = await runningServe(root);
       throw new PorterError('already-serving', `Porter is already serving this directory (pid ${holder})`, info ? `It's at ${info.url}.` : 'Stop that process first.');
     }
-    // Left by a process that died; take it over.
-    await rm(path, { force: true });
+    // Left by a process that died; take it over. Move it aside rather than
+    // deleting it, so two processes doing this at once can't delete a lock
+    // the other has just taken: only one rename wins, and a moved lock that
+    // isn't the dead one goes back.
+    const aside = `${path}.stale.${randomBytes(4).toString('hex')}`;
+    try {
+      await rename(path, aside);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue;
+      throw error;
+    }
+    if (Number((await readFile(aside, 'utf8').catch(() => '')).trim()) !== holder) await link(aside, path).catch(() => {});
+    await rm(aside, { force: true });
   }
   throw new PorterError('lock-contended', "Couldn't take the serve lock", 'Another porter serve is starting. Try again.');
 }

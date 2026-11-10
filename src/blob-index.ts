@@ -94,12 +94,34 @@ export class BlobIndex {
     readonly retry: RetryPolicy = DEFAULT_RETRY,
   ) {
     this.#db = new DatabaseSync(path);
-    this.#db.exec('PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000; PRAGMA foreign_keys = ON; PRAGMA synchronous = NORMAL;');
+    // busy_timeout first, so later statements wait for each other's locks.
+    this.#db.exec('PRAGMA busy_timeout = 5000');
+    this.#enableWal();
+    this.#db.exec('PRAGMA foreign_keys = ON; PRAGMA synchronous = NORMAL;');
     this.#migrate();
   }
 
   close(): void {
     this.#db.close();
+  }
+
+  /**
+   * Switch to WAL. SQLite fails this at once, without waiting out
+   * busy_timeout, when another process is making the same switch, as when
+   * two open a fresh index together. WAL is recorded in the file, so retry
+   * briefly until one of them has made it.
+   */
+  #enableWal(): void {
+    const pause = new Int32Array(new SharedArrayBuffer(4));
+    for (let attempt = 0; ; attempt++) {
+      try {
+        this.#db.exec('PRAGMA journal_mode = WAL');
+        return;
+      } catch (error) {
+        if (attempt >= 250 || !/database is locked/.test((error as Error).message)) throw error;
+        Atomics.wait(pause, 0, 0, 20);
+      }
+    }
   }
 
   /**

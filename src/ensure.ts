@@ -58,7 +58,9 @@ export async function ensureServe(options: EnsureServeOptions = {}): Promise<Ser
   const log = await open(logPath, 'a');
   const args = [porterBin(), 'serve', '--home', root, '--idle-exit', `${options.idleExitMs ?? 10 * 60 * 1000}ms`];
   if (options.port !== undefined) args.push('--port', String(options.port));
-  const child = spawn(process.execPath, args, { detached: true, stdio: ['ignore', log.fd, log.fd], env: { ...process.env, NO_COLOR: '1' } });
+  // The log is a file, so no color; FORCE_COLOR would override NO_COLOR.
+  const { FORCE_COLOR: _, ...env } = process.env;
+  const child = spawn(process.execPath, args, { detached: true, stdio: ['ignore', log.fd, log.fd], env: { ...env, NO_COLOR: '1' } });
   let exited: number | null | undefined;
   child.on('exit', code => (exited = code));
   child.unref();

@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process';
+import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -8,15 +9,27 @@ import { tempDir } from './helpers.js';
 const run = promisify(execFile);
 const BIN = join(import.meta.dirname, '..', 'bin', 'porter.js');
 const started: number[] = [];
+// Stop each background server and wait for it to exit before the temp
+// directory is removed; otherwise its own cleanup races the removal.
 afterEach(async () => {
-  for (const pid of started.splice(0)) {
+  for (const pid of new Set(started.splice(0))) {
     try {
       process.kill(pid, 'SIGTERM');
     } catch {
-      // Already gone.
+      continue;
     }
+    for (let i = 0; i < 200 && isAlive(pid); i++) await new Promise(resolve => setTimeout(resolve, 25));
   }
 });
+
+function isAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 async function withBlob(root: string) {
   const local = new LocalStore({ root });
@@ -50,6 +63,15 @@ describe('ensureServe', () => {
     started.push(a.pid, b.pid);
     expect(a.pid).toBe(b.pid);
     expect((await runningServe(root))?.pid).toBe(a.pid);
+  });
+
+  it('ends up with one server when two callers race over a stale lock', async () => {
+    const root = await tempDir();
+    await writeFile(join(root, 'porter-serve.lock'), '999999');
+    const [a, b] = await Promise.all([ensureServe({ root, port: 0 }), ensureServe({ root, port: 0 })]);
+    started.push(a.pid, b.pid);
+    expect(a.pid).toBe(b.pid);
+    expect((await readFile(join(root, 'porter-serve.lock'), 'utf8')).trim()).toBe(String(a.pid));
   });
 
   it('uses a server running in this process', async () => {

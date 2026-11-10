@@ -110,6 +110,18 @@ describe('BlobIndex', () => {
     expect(index.touch(B, 1000)).toBe(false);
   });
 
+  it('opens a fresh index from two processes at once', async () => {
+    const { execFile } = await import('node:child_process');
+    const path = join(await tempDir(), 'porter-index.sqlite');
+    const script = `import { BlobIndex } from ${JSON.stringify(new URL('../dist/src/index.js', import.meta.url).href)}; new BlobIndex(process.argv[1]).close();`;
+    const open = () =>
+      new Promise<number | null>(resolve => {
+        const child = execFile(process.execPath, ['--input-type=module', '-e', script, path]);
+        child.on('exit', code => resolve(code));
+      });
+    expect(await Promise.all([open(), open(), open(), open()])).toEqual([0, 0, 0, 0]);
+  });
+
   it('keeps its contents across reopening', async () => {
     const path = join(await tempDir(), 'porter-index.sqlite');
     const first = open(path);
