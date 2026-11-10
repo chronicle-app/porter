@@ -62,17 +62,21 @@ export class S3ByteStore implements ByteStore {
 
   async put(key: string, source: ByteSource, hints: PutHints = {}): Promise<void> {
     checkKey(key);
-    if ((await this.size(key)) !== undefined) return;
+    // The source may be a stream of unknown length. Read up to two parts:
+    // fewer than two means it fits in a single PUT.
     const parts = partsOf(source, this.partSize);
-    const first = await parts.next();
-    const second = first.done ? first : await parts.next();
-    if (second.done) {
-      const body = first.done ? new Uint8Array() : first.value;
-      const sha256 = hints.sha256 ? Buffer.from(hints.sha256).toString('hex') : hex(body);
-      await this.#request('PUT', key, '', { body, sha256 });
+    const head = await take(parts, 2);
+    if (head.length < 2) {
+      const body = head[0] ?? new Uint8Array();
+      const sha256 = hints.sha256 ? Buffer.from(hints.sha256).toString('hex') : sha256HexOf(body);
+      // Store only if absent, in one round trip: 412 means it's already there.
+      await this.#request('PUT', key, '', { body, sha256, headers: { 'if-none-match': '*' }, allow: [412] });
       return;
     }
-    await this.#multipart(key, [first.value, second.value], parts, hints.sha256);
+    // Conditional completes aren't supported everywhere (R2), so check first.
+    // One extra request is nothing next to a multipart upload.
+    if ((await this.size(key)) !== undefined) return;
+    await this.#multipart(key, head, parts, hints.sha256);
   }
 
   async read(key: string, range?: ByteRange): Promise<AsyncIterable<Uint8Array> | undefined> {
@@ -120,7 +124,7 @@ export class S3ByteStore implements ByteStore {
     try {
       const send = async (part: Uint8Array) => {
         whole.update(part);
-        const response = await this.#request('PUT', key, `?partNumber=${etags.length + 1}&${upload}`, { body: part, sha256: hex(part) });
+        const response = await this.#request('PUT', key, `?partNumber=${etags.length + 1}&${upload}`, { body: part, sha256: sha256HexOf(part) });
         etags.push(response.headers.get('etag') ?? '');
       };
       for (const part of head) await send(part);
@@ -130,7 +134,7 @@ export class S3ByteStore implements ByteStore {
       const body = Buffer.from(
         `<CompleteMultipartUpload>${etags.map((etag, i) => `<Part><PartNumber>${i + 1}</PartNumber><ETag>${escapeXml(etag)}</ETag></Part>`).join('')}</CompleteMultipartUpload>`,
       );
-      const response = await this.#request('POST', key, `?${upload}`, { body, sha256: hex(body) });
+      const response = await this.#request('POST', key, `?${upload}`, { body, sha256: sha256HexOf(body) });
       // CompleteMultipartUpload can fail with a 200 and an error document.
       const text = await response.text();
       if (/<Error>/.test(text)) throw new S3Error(`Couldn't complete upload of ${key}`, 200, text.match(/<Code>([^<]*)</)?.[1]);
@@ -188,7 +192,19 @@ async function* partsOf(source: ByteSource, size: number): AsyncGenerator<Uint8A
   if (filled > 0) yield buffer.subarray(0, filled);
 }
 
-function hex(bytes: Uint8Array): string {
+/** The next `count` items of `items`, or fewer if it ends first. */
+async function take<T>(items: AsyncIterator<T>, count: number): Promise<T[]> {
+  const taken: T[] = [];
+  while (taken.length < count) {
+    const next = await items.next();
+    if (next.done) break;
+    taken.push(next.value);
+  }
+  return taken;
+}
+
+/** Hash `bytes` and return the SHA-256 as hex, as `x-amz-content-sha256` wants it. */
+function sha256HexOf(bytes: Uint8Array): string {
   return createHash('sha256').update(bytes).digest('hex');
 }
 

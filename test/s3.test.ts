@@ -66,11 +66,22 @@ describe('S3ByteStore', () => {
     expect(fake.openUploads).toBe(0);
   });
 
-  it('skips the upload when the key already exists', async () => {
+  it('writes small blobs in one conditional PUT', async () => {
     const s3 = store();
     await s3.put('keyexists', Buffer.from('once'));
+    expect(fake.requests.map(r => r.method)).toEqual(['PUT']);
     fake.requests.length = 0;
-    await s3.put('keyexists', Buffer.from('once'));
+    await s3.put('keyexists', Buffer.from('again'));
+    expect(fake.requests.map(r => r.method)).toEqual(['PUT']);
+    expect(Buffer.from(await collect((await s3.read('keyexists'))!)).toString()).toBe('once');
+  });
+
+  it('skips a multipart upload when the key already exists', async () => {
+    const s3 = store({ partSize: 5 * MiB });
+    const bytes = randomBytes(6 * MiB);
+    await s3.put('keyexists2', bytes);
+    fake.requests.length = 0;
+    await s3.put('keyexists2', bytes);
     expect(fake.requests.map(r => r.method)).toEqual(['HEAD']);
   });
 

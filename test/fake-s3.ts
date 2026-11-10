@@ -81,6 +81,7 @@ export class FakeS3 {
       return send(204);
     }
     if (req.method === 'PUT') {
+      if (req.headers['if-none-match'] === '*' && this.objects.has(key)) return error(412, 'PreconditionFailed');
       this.objects.set(key, body);
       return send(200, '', { etag: '"whole"' });
     }

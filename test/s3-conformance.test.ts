@@ -26,7 +26,8 @@ const remote = process.env.S3_ENDPOINT
     }
   : undefined;
 const versitygw = !remote && spawnSync('versitygw', ['--version']).status === 0;
-const target = remote ? `remote ${remote.endpoint}` : 'versitygw';
+// Not the endpoint itself: it can carry an account ID, and test names end up in logs.
+const target = remote ? 'remote S3 (S3_ENDPOINT)' : 'versitygw';
 // CI sets this so a missing versitygw fails the run instead of skipping the suite.
 if (process.env.PORTER_REQUIRE_S3_CONFORMANCE && !remote && !versitygw) {
   throw new Error('PORTER_REQUIRE_S3_CONFORMANCE is set but versitygw is not on PATH');
