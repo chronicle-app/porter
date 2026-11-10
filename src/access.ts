@@ -47,6 +47,12 @@ export class Access {
     return same(cap, this.#sign(cid, exp));
   }
 
+  /** A URL on the server at `base` that reads `cid` without the token until `ttlMs` from now. */
+  urlFor(base: string, cid: string, ttlMs = DEFAULT_CAPABILITY_TTL_MS): string {
+    const { exp, cap } = this.capability(cid, Date.now() + ttlMs);
+    return `${base}/.well-known/rasl/${cid}?exp=${exp}&cap=${cap}`;
+  }
+
   #sign(cid: string, exp: string): string {
     return createHmac('sha256', this.#secret).update(`porter-rasl-read\0${cid}\0${exp}`).digest('base64url');
   }

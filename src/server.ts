@@ -118,8 +118,7 @@ export async function serveRasl(options: RaslServerOptions): Promise<RaslServer>
     server,
     urlFor(cid, { ttlMs = DEFAULT_CAPABILITY_TTL_MS } = {}) {
       parseCid(cid);
-      const { exp, cap } = access.capability(cid, Date.now() + ttlMs);
-      return `${url}/.well-known/rasl/${cid}?exp=${exp}&cap=${cap}`;
+      return access.urlFor(url, cid, ttlMs);
     },
     close: () =>
       new Promise((resolve, reject) => {

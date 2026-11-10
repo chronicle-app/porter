@@ -9,6 +9,8 @@ import { defaultRoot } from './files.js';
 import { bytes, count, tilde } from './output/index.js';
 import { Porter } from './porter.js';
 import { DEFAULT_PORT, runningServe, serve, type ServeEvent } from './serve.js';
+import { ensureServe } from './ensure.js';
+import { parseCid } from './cid.js';
 import { Terminal } from './terminal.js';
 
 const HELP = `Usage: porter COMMAND [flags]
@@ -16,6 +18,7 @@ const HELP = `Usage: porter COMMAND [flags]
 Commands:
   serve [--port PORT] [--idle-exit TIME]
                                 Serve blobs on localhost and upload them to remotes
+  url CID [--ttl TIME]          A URL that reads one blob, starting porter serve if needed
   status                        Blobs, and where each remote stands
   scan                          Record files the index doesn't know, and report missing ones
   retry [REMOTE]                Queue blobs that failed to upload again
@@ -51,6 +54,14 @@ directory.
   --port PORT       Defaults to ${DEFAULT_PORT}; capability URLs carry it, so keep it fixed
   --idle-exit TIME  Stop after this long with no requests or uploads, like 10m
   --interval TIME   How often to look for blobs to upload. Defaults to 30s`,
+  url: `Usage: porter url CID [--ttl TIME]
+
+Prints a URL that reads one blob from porter serve without the token, for a
+video player or an <img>. It works until it expires, 12h by default. If
+porter serve isn't running, it's started in the background and stops once
+idle for 10 minutes.
+
+  --ttl TIME   How long the URL works, like 30m or 24h`,
   status: `Usage: porter status
 
 Shows how many blobs Porter holds, and for each remote how many are
@@ -131,6 +142,7 @@ export async function main(args: string[], terminal = new Terminal()): Promise<n
         port: { type: 'string' },
         'idle-exit': { type: 'string' },
         interval: { type: 'string' },
+        ttl: { type: 'string' },
       },
     });
     const mode = values.color ?? 'auto';
@@ -183,6 +195,16 @@ export async function main(args: string[], terminal = new Terminal()): Promise<n
           process.off('SIGINT', stop);
           process.off('SIGTERM', stop);
         }
+        return 0;
+      }
+      case 'url': {
+        want(1, 'a CID');
+        parseCid(rest[0]!);
+        const ttlMs = values.ttl === undefined ? undefined : parseDuration(values.ttl, '--ttl');
+        const client = await ensureServe({ root, ...(values.port !== undefined && { port: Number(values.port) }) });
+        const url = client.urlFor(rest[0]!, { ttlMs });
+        if (client.started) terminal.notice(`Started porter serve at ${client.url}`);
+        terminal.result(command, { url, server: client.url, started: client.started }, () => [url]);
         return 0;
       }
       case 'status': {

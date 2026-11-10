@@ -10,12 +10,12 @@ Not released yet. `porter serve` serves blobs and uploads them to remotes;
 commands.
 
 ```js
-import { LocalStore, ReadThrough, Access, serveRasl } from '@chronicle.app/porter';
+import { Porter, ensureServe } from '@chronicle.app/porter';
 
-const local = new LocalStore({ root: '/path/to/porter' });
-const { cid } = await local.put(fileStream); // bafkrei…
+const porter = await Porter.open(); // the platform's app-data directory
+const { cid } = await porter.local.put(fileStream); // bafkrei…, queued for remotes
 
-const server = await serveRasl({ reader: new ReadThrough(local), access: await Access.load('/path/to/porter') });
+const server = await ensureServe(); // starts `porter serve` in the background if needed
 server.urlFor(cid); // a URL a video player or <img> can load for 12 hours
 ```
 
