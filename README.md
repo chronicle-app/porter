@@ -5,8 +5,9 @@ A local blob store and [RASL](https://dasl.ing/rasl.html) server for
 [DASL CIDs](https://dasl.ing/cid.html), kept on local disk, and replicated to
 S3-compatible storage.
 
-Not released yet. The library works, and `porter` manages remotes and shows
-status; `porter serve` is next. Run `porter --help` for the commands.
+Not released yet. `porter serve` serves blobs and uploads them to remotes;
+`porter` also manages remotes and shows status. Run `porter --help` for the
+commands.
 
 ```js
 import { LocalStore, ReadThrough, Access, serveRasl } from '@chronicle.app/porter';
@@ -20,7 +21,8 @@ server.urlFor(cid); // a URL a video player or <img> can load for 12 hours
 
 ## HTTP
 
-`porter serve` listens on 127.0.0.1 and only reads.
+`porter serve` listens on 127.0.0.1, port 7413 unless `--port` says
+otherwise, and only reads. One runs per Porter directory.
 
 | Request | Response |
 | --- | --- |

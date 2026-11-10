@@ -57,6 +57,7 @@ export class Replicator {
   readonly #emit: (event: ReplicationEvent) => void;
   readonly #clock: () => number;
   readonly #pauses = new Map<string, { until: number; failures: number }>();
+  #stopping = false;
 
   constructor(local: LocalStore, remotes: Remote[], options: ReplicatorOptions = {}) {
     this.#local = local;
@@ -77,6 +78,22 @@ export class Replicator {
     return this.#local.index.resetUploading(this.#clock());
   }
 
+  /**
+   * Stop claiming new uploads. Uploads already under way finish, and a
+   * `runOnce` in progress returns once they have.
+   */
+  stop(): void {
+    this.#stopping = true;
+  }
+
+  /** Remotes paused right now, and until when. */
+  pauses(): Record<string, number> {
+    return Object.fromEntries(this.#remotes.flatMap(r => {
+      const until = this.pausedUntil(r.name);
+      return until === undefined ? [] : [[r.name, until]];
+    }));
+  }
+
   /** When `remote` is paused until, or `undefined` if it isn't. */
   pausedUntil(remote: string): number | undefined {
     const pause = this.#pauses.get(remote);
@@ -92,7 +109,7 @@ export class Replicator {
   }
 
   async #drain(remote: Remote, summary: ReplicationSummary): Promise<void> {
-    while (this.pausedUntil(remote.name) === undefined) {
+    while (!this.#stopping && this.pausedUntil(remote.name) === undefined) {
       const batch = this.#local.index.claim(remote.name, this.#concurrency, this.#clock());
       if (batch.length === 0) return;
       const outcomes = await Promise.all(batch.map(row => this.#upload(remote, row.cid)));

@@ -69,6 +69,13 @@ export class Terminal {
     return line([[clean(text)]], this.width);
   }
 
+  /** A fact worth a line on stderr. Hidden by --quiet and --json. */
+  notice(message: string): void {
+    if (this.json) return;
+    this.#log.emit({ level: 'info', kind: 'notice', message: tildes(clean(message)) });
+    this.#log.flush();
+  }
+
   /** Something wrong that didn't stop the command. */
   warn(message: string, next?: string): void {
     if (this.json) return;

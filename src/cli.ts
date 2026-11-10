@@ -8,11 +8,14 @@ import { PorterError } from './errors.js';
 import { defaultRoot } from './files.js';
 import { bytes, count, tilde } from './output/index.js';
 import { Porter } from './porter.js';
+import { DEFAULT_PORT, runningServe, serve, type ServeEvent } from './serve.js';
 import { Terminal } from './terminal.js';
 
 const HELP = `Usage: porter COMMAND [flags]
 
 Commands:
+  serve [--port PORT] [--idle-exit TIME]
+                                Serve blobs on localhost and upload them to remotes
   status                        Blobs, and where each remote stands
   scan                          Record files the index doesn't know, and report missing ones
   retry [REMOTE]                Queue blobs that failed to upload again
@@ -39,6 +42,15 @@ const FLAGS_NOTE = 'Global flags: --home DIR, --json, --quiet, --color MODE. Run
 
 /** Help for each command: how to call it, then what it does. */
 const COMMAND_HELP: Record<string, string> = {
+  serve: `Usage: porter serve [--port PORT] [--idle-exit TIME] [--interval TIME]
+
+Serves blobs over RASL at http://127.0.0.1:PORT/.well-known/rasl/CID and
+uploads new blobs to remotes, until stopped with Ctrl-C. Only one runs per
+directory.
+
+  --port PORT       Defaults to ${DEFAULT_PORT}; capability URLs carry it, so keep it fixed
+  --idle-exit TIME  Stop after this long with no requests or uploads, like 10m
+  --interval TIME   How often to look for blobs to upload. Defaults to 30s`,
   status: `Usage: porter status
 
 Shows how many blobs Porter holds, and for each remote how many are
@@ -116,6 +128,9 @@ export async function main(args: string[], terminal = new Terminal()): Promise<n
         'max-size': { type: 'string' },
         since: { type: 'string' },
         until: { type: 'string' },
+        port: { type: 'string' },
+        'idle-exit': { type: 'string' },
+        interval: { type: 'string' },
       },
     });
     const mode = values.color ?? 'auto';
@@ -143,9 +158,38 @@ export async function main(args: string[], terminal = new Terminal()): Promise<n
         terminal.result(command, { cid }, () => [cid]);
         return 0;
       }
-      case 'status':
+      case 'serve': {
         want(0, '');
-        return await withPorter(root, porter => status(porter, terminal));
+        const port = values.port === undefined ? DEFAULT_PORT : Number(values.port);
+        if (!Number.isInteger(port) || port < 0 || port > 65535) throw usage(`Can't read port ${values.port}`, 'Give --port a number from 1 to 65535.');
+        const idleExitMs = values['idle-exit'] === undefined ? undefined : parseDuration(values['idle-exit'], '--idle-exit');
+        const intervalMs = values.interval === undefined ? undefined : parseDuration(values.interval, '--interval');
+        // Catch signals before starting: one that arrives while the server is
+        // starting must still stop it cleanly, not kill it holding the lock.
+        let stopRequested = false;
+        let running: Awaited<ReturnType<typeof serve>> | undefined;
+        const stop = () => {
+          stopRequested = true;
+          void running?.stop();
+        };
+        process.on('SIGINT', stop);
+        process.on('SIGTERM', stop);
+        try {
+          running = await serve({ root, port, idleExitMs, intervalMs, onEvent: event => report(terminal, event) });
+          if (stopRequested) void running.stop();
+          const reason = await running.done;
+          terminal.result(command, { stopped: reason }, () => []);
+        } finally {
+          process.off('SIGINT', stop);
+          process.off('SIGTERM', stop);
+        }
+        return 0;
+      }
+      case 'status': {
+        want(0, '');
+        const serving = await runningServe(root);
+        return await withPorter(root, porter => status(porter, terminal, serving));
+      }
       case 'scan': {
         want(0, '');
         const started = Date.now();
@@ -258,7 +302,21 @@ async function withPorter<T>(root: string, fn: (porter: Porter) => Promise<T> | 
   }
 }
 
-function status(porter: Porter, terminal: Terminal): number {
+/** Say what a running server is doing, as log lines on stderr. */
+function report(terminal: Terminal, event: ServeEvent): void {
+  if (event.kind === 'started') terminal.notice(`Serving ${event.url}`);
+  else if (event.kind === 'recovered') terminal.notice(`Queued ${count(event.uploads)} interrupted ${event.uploads === 1 ? 'upload' : 'uploads'} again`);
+  else if (event.kind === 'stopping') terminal.notice(event.reason === 'idle' ? 'Stopping, nothing to do' : 'Stopping');
+  else {
+    const e = event.event;
+    if (e.kind === 'uploaded') terminal.notice(`Uploaded ${e.cid} to ${e.remote} (${bytes(e.size)})`);
+    else if (e.kind === 'remote-paused') terminal.warn(`Remote ${e.remote} isn't reachable: ${e.error.message}`, `Uploads to it pause until ${new Date(e.until).toLocaleTimeString()}.`);
+    else if (e.gaveUp) terminal.warn(`Gave up uploading ${e.cid} to ${e.remote}: ${e.error.message}`, `Run \`porter retry ${e.remote}\` once it's fixed.`);
+    else terminal.warn(`Couldn't upload ${e.cid} to ${e.remote}: ${e.error.message}`, 'It will be tried again.');
+  }
+}
+
+function status(porter: Porter, terminal: Terminal, serving?: { pid: number; url: string; pauses: Record<string, number> }): number {
   const index = porter.local.index;
   const totals = index.totals();
   const counts = index.counts();
@@ -269,14 +327,18 @@ function status(porter: Porter, terminal: Terminal): number {
     states: Object.fromEntries(counts.filter(c => c.tier === remote.name).map(c => [c.state, { blobs: c.blobs, bytes: c.bytes }])),
     unqueued: index.unqueued(remote.name),
   }));
-  terminal.result('status', { root: porter.root, ...totals, remotes }, () => {
+  terminal.result('status', { root: porter.root, ...totals, serving: serving ?? null, remotes }, () => {
     const rows = remotes.flatMap(remote => [
       ...Object.entries(remote.states).map(([state, n]) => [remote.name, state, count(n.blobs), bytes(n.bytes)]),
       ...(remote.unqueued.blobs ? [[remote.name, 'not queued', count(remote.unqueued.blobs), bytes(remote.unqueued.bytes)]] : []),
     ]);
     return [
       terminal.summary('success', `Porter  ${tilde(porter.root)}`),
-      ...terminal.card([['Blobs', `${count(totals.blobs)} (${bytes(totals.bytes)})`]]),
+      ...terminal.card([
+        ['Blobs', `${count(totals.blobs)} (${bytes(totals.bytes)})`],
+        ['Serving', serving ? `${serving.url} (pid ${serving.pid})` : 'no'],
+        ...Object.entries(serving?.pauses ?? {}).map(([name, until]) => ['Paused', `${name} until ${new Date(until).toLocaleTimeString()}`] as [string, string]),
+      ]),
       ...(rows.length ? ['', ...terminal.table(['Remote', 'State', 'Blobs', 'Size'], rows, [false, false, true, true])] : []),
     ];
   });
@@ -323,6 +385,14 @@ export function parseSize(text: string): number {
   if (!match) throw usage(`Can't read size ${text}`, 'Use a number of bytes, or one like 50MB or 1.5GB.');
   const power = ' kmgt'.indexOf((match[2] || ' ').toLowerCase());
   return Math.floor(Number(match[1]) * 1000 ** power);
+}
+
+/** `30s`, `10m`, `2h`, or a plain number of seconds, in milliseconds. */
+export function parseDuration(text: string, flag: string): number {
+  const match = text.trim().match(/^(\d+(?:\.\d+)?)\s*(ms|s|m|h)?$/);
+  if (!match) throw usage(`Can't read ${flag} ${text}`, `Give ${flag} a time like 30s, 10m, or 2h.`);
+  const unit = { ms: 1, s: 1000, m: 60_000, h: 3_600_000 }[match[2] ?? 's']!;
+  return Math.round(Number(match[1]) * unit);
 }
 
 /** `2026-01-31` as the start of that day, local time. */
