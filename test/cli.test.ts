@@ -122,6 +122,15 @@ describe('porter CLI', () => {
     expect((await json(['remote', 'list', '--home', home])).data.remotes).toEqual([]);
   });
 
+  it('refuses a second remote as not implemented yet', async () => {
+    const home = await tempDir();
+    await json(['remote', 'add', 'r2', 'https://example.com', '--bucket', 'b', '--home', home], KEYS);
+    const { code, data } = await json(['remote', 'add', 's3', 'https://s3.example.com', '--bucket', 'b', '--home', home], KEYS);
+    expect(code).toBe(1);
+    expect(data.error).toMatchObject({ code: 'not-implemented', hint: expect.stringContaining('porter remote remove r2') });
+    expect((await json(['remote', 'list', '--home', home])).data.remotes.map((r: { name: string }) => r.name)).toEqual(['r2']);
+  });
+
   it('refuses a duplicate remote, pointing at remove', async () => {
     const home = await tempDir();
     await json(['remote', 'add', 'r2', 'https://example.com', '--bucket', 'b', '--home', home], KEYS);

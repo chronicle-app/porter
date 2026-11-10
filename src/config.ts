@@ -17,7 +17,10 @@ export interface RemoteConfig {
 
 const NAME = /^[a-z][a-z0-9-]{0,31}$/;
 
-/** `porter-config.json` in Porter's root: settings, never secrets. */
+/**
+ * `porter-config.json` in Porter's root: settings, never secrets. It holds
+ * at most one remote for now; migrating between remotes isn't implemented.
+ */
 export class PorterConfig {
   private constructor(
     readonly path: string,
@@ -44,6 +47,16 @@ export class PorterConfig {
       throw new PorterError('invalid-remote', `Invalid remote name ${remote.name}`, 'Use lowercase letters, digits, and dashes, starting with a letter.');
     }
     if (this.remote(remote.name)) throw new PorterError('remote-exists', `Remote ${remote.name} already exists`, `Remove it first with \`porter remote remove ${remote.name}\`.`);
+    // One remote at a time. Moving blobs from one remote to another isn't
+    // implemented yet; the list shape leaves room for it.
+    const current = this.remoteList[0];
+    if (current) {
+      throw new PorterError(
+        'not-implemented',
+        `Porter already has a remote, ${current.name}`,
+        `Porter uses one remote at a time, and migrating between remotes isn't implemented yet. To switch, run \`porter remote remove ${current.name}\`, add the new one, then copy local blobs to it with \`porter remote backfill\`.`,
+      );
+    }
     try {
       new URL(remote.endpoint);
     } catch {

@@ -40,6 +40,22 @@ describe('PorterConfig', () => {
     expect(() => config.addRemote({ ...remote('r2'), ...change })).toThrow(expect.objectContaining({ code }));
   });
 
+  it('holds one remote; switching means removing the old one first', async () => {
+    const config = await PorterConfig.load(await tempDir());
+    config.addRemote(remote('r2'));
+    const error = (() => {
+      try {
+        config.addRemote(remote('s3'));
+      } catch (e) {
+        return e;
+      }
+    })();
+    expect(error).toMatchObject({ code: 'not-implemented', hint: expect.stringContaining('porter remote remove r2') });
+    config.removeRemote('r2');
+    config.addRemote(remote('s3'));
+    expect(config.remotes.map(r => r.name)).toEqual(['s3']);
+  });
+
   it('refuses duplicate and unknown remotes', async () => {
     const config = await PorterConfig.load(await tempDir());
     config.addRemote(remote('r2'));
@@ -103,23 +119,32 @@ describe('Porter', () => {
     porter.close();
   });
 
-  it('queues new blobs for remotes set to all, and replicates them', async () => {
+  it('queues new blobs for its remote, and replicates them', async () => {
     const root = await tempDir();
-    await configure(root, [remote('r2'), remote('cold', 'none')]);
+    await configure(root, [remote('r2')]);
     const porter = await Porter.open({ root });
     const { cid } = await porter.local.put(Buffer.from('hello'));
     expect(porter.local.index.replicas(cid).map(r => r.tier)).toEqual(['r2']);
     expect(await porter.replicator().runOnce()).toMatchObject({ uploaded: 1 });
-    expect(await porter.remotes.find(r => r.name === 'r2')!.store.size(cid)).toBe(5);
+    expect(await porter.remotes[0]!.store.size(cid)).toBe(5);
     porter.close();
   });
 
-  it('leaves out remotes whose keys are missing', async () => {
+  it('queues nothing for a remote that takes no new blobs', async () => {
     const root = await tempDir();
-    await configure(root, [remote('r2'), remote('s3')], ['r2']);
+    await configure(root, [remote('cold', 'none')]);
     const porter = await Porter.open({ root });
-    expect(porter.remotes.map(r => r.name)).toEqual(['r2']);
-    expect(porter.missingCredentials).toEqual(['s3']);
+    const { cid } = await porter.local.put(Buffer.from('hello'));
+    expect(porter.local.index.replicas(cid)).toEqual([]);
+    porter.close();
+  });
+
+  it('leaves out a remote whose keys are missing', async () => {
+    const root = await tempDir();
+    await configure(root, [remote('r2')], []);
+    const porter = await Porter.open({ root });
+    expect(porter.remotes).toEqual([]);
+    expect(porter.missingCredentials).toEqual(['r2']);
     porter.close();
   });
 
