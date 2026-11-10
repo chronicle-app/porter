@@ -35,6 +35,16 @@ export interface TierCounts {
   bytes: number;
 }
 
+/** Which existing blobs a backfill copies. Omitted fields don't filter. */
+export interface BackfillFilter {
+  /** Only blobs of at most this many bytes. */
+  maxSize?: number;
+  /** Only blobs added at or after this time (milliseconds since the epoch). */
+  addedSince?: number;
+  /** Only blobs added before this time. */
+  addedBefore?: number;
+}
+
 export interface RetryPolicy {
   /** Failures before a replica is marked `failed` and left for `retry`. */
   maxAttempts: number;
@@ -174,6 +184,30 @@ export class BlobIndex {
    */
   release(cid: string, tier: string, now = Date.now()): void {
     this.#set(cid, tier, "state = 'pending'", now);
+  }
+
+  /**
+   * Queue blobs not yet queued for `tier` that match `filter`, or with
+   * `plan`, only count them. Returns how many blobs and bytes that is.
+   */
+  backfill(tier: string, filter: BackfillFilter = {}, options: { plan?: boolean } = {}, now = Date.now()): { blobs: number; bytes: number } {
+    const where = `NOT EXISTS (SELECT 1 FROM replicas r WHERE r.cid = b.cid AND r.tier = :tier)
+      AND (:maxSize IS NULL OR b.size <= :maxSize)
+      AND (:addedSince IS NULL OR b.added_at >= :addedSince)
+      AND (:addedBefore IS NULL OR b.added_at < :addedBefore)`;
+    const params = { tier, maxSize: filter.maxSize ?? null, addedSince: filter.addedSince ?? null, addedBefore: filter.addedBefore ?? null };
+    return this.#transaction(() => {
+      const row = this.#db.prepare(`SELECT COUNT(*) AS blobs, COALESCE(SUM(b.size), 0) AS bytes FROM blobs b WHERE ${where}`).get(params)!;
+      if (!options.plan) {
+        this.#db.prepare(`INSERT INTO replicas (cid, tier, state, updated_at) SELECT b.cid, :tier, 'pending', :now FROM blobs b WHERE ${where}`).run({ ...params, now });
+      }
+      return { blobs: Number(row.blobs), bytes: Number(row.bytes) };
+    });
+  }
+
+  /** Blobs not queued for `tier` at all, and their bytes. */
+  unqueued(tier: string): { blobs: number; bytes: number } {
+    return this.backfill(tier, {}, { plan: true });
   }
 
   /** Put `failed` replicas back in the queue with a fresh count. Returns how many. */

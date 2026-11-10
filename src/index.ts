@@ -11,3 +11,7 @@ export * from './replicate.js';
 export * from './read-through.js';
 export * from './access.js';
 export * from './server.js';
+export * from './files.js';
+export * from './config.js';
+export * from './credentials.js';
+export * from './porter.js';
