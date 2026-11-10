@@ -5,12 +5,36 @@ A local blob store and [RASL](https://dasl.ing/rasl.html) server for
 [DASL CIDs](https://dasl.ing/cid.html), kept on local disk, and replicated to
 S3-compatible storage.
 
-Early scaffold: CIDs and the in-memory store work; the filesystem and S3
-stores, the replication queue, and `porter serve` are next.
+Not released yet. The library works; the `porter` command and `porter serve`
+are next.
 
-```sh
-porter cid ./photo.jpg   # bafkrei…
+```js
+import { LocalStore, ReadThrough, Access, serveRasl } from '@chronicle.app/porter';
+
+const local = new LocalStore({ root: '/path/to/porter' });
+const { cid } = await local.put(fileStream); // bafkrei…
+
+const server = await serveRasl({ reader: new ReadThrough(local), access: await Access.load('/path/to/porter') });
+server.urlFor(cid); // a URL a video player or <img> can load for 12 hours
 ```
+
+## HTTP
+
+`porter serve` listens on 127.0.0.1 and only reads.
+
+| Request | Response |
+| --- | --- |
+| `GET /.well-known/rasl/CID` | The blob, as `application/octet-stream`. `Range` gives `206`. |
+| `HEAD /.well-known/rasl/CID` | The same headers, with no body. |
+
+Every request needs `Authorization: Bearer TOKEN`, with the token from
+`porter-token` in Porter's root, or a capability URL from `urlFor`, which reads
+one CID until it expires. Requests must name the host as `127.0.0.1:PORT` or
+`localhost:PORT`. There are no CORS headers.
+
+A blob missing locally is read from each remote in turn. A full read that
+doesn't match its CID stops short of its `Content-Length`, so clients see a
+broken transfer. Ranges aren't checked.
 
 ## Develop
 
