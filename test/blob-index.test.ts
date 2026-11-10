@@ -17,7 +17,7 @@ describe('BlobIndex', () => {
     const index = open();
     index.add({ cid: A, size: 12, codec: RAW }, ['r2', 's3'], 100);
     index.add({ cid: A, size: 999, codec: RAW }, ['r2'], 200);
-    expect(index.blob(A)).toEqual({ cid: A, size: 12, codec: RAW, addedAt: 100 });
+    expect(index.blob(A)).toEqual({ cid: A, size: 12, codec: RAW, addedAt: 100, lastReadAt: null });
     expect(index.replicas(A).map(r => [r.tier, r.state])).toEqual([
       ['r2', 'pending'],
       ['s3', 'pending'],
@@ -96,6 +96,18 @@ describe('BlobIndex', () => {
       { tier: 'r2', state: 'pending', blobs: 1, bytes: 30 },
       { tier: 'r2', state: 'uploaded', blobs: 1, bytes: 12 },
     ]);
+  });
+
+  it('updates read times at most once per interval', () => {
+    const index = open();
+    index.add({ cid: A, size: 12, codec: RAW }, [], 0);
+    const hour = 60 * 60 * 1000;
+    expect(index.touch(A, 1000)).toBe(true);
+    expect(index.touch(A, 1000 + hour - 1)).toBe(false);
+    expect(index.blob(A)?.lastReadAt).toBe(1000);
+    expect(index.touch(A, 1000 + hour)).toBe(true);
+    expect(index.blob(A)?.lastReadAt).toBe(1000 + hour);
+    expect(index.touch(B, 1000)).toBe(false);
   });
 
   it('keeps its contents across reopening', async () => {

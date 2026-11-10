@@ -49,8 +49,16 @@ export class LocalStore implements BlobStore {
     return result;
   }
 
-  get(cid: string, range?: ByteRange): Promise<BlobRead | undefined> {
-    return this.blobs.get(cid, range);
+  async get(cid: string, range?: ByteRange): Promise<BlobRead | undefined> {
+    const read = await this.blobs.get(cid, range);
+    if (read) {
+      try {
+        this.index.touch(cid);
+      } catch {
+        // Read times only inform future placement; never fail a read over one.
+      }
+    }
+    return read;
   }
 
   size(cid: string): Promise<number | undefined> {
@@ -58,9 +66,11 @@ export class LocalStore implements BlobStore {
   }
 
   /**
-   * Bring the index in line with the files: record files it doesn't know
-   * (queued for every tier) and report rows whose file is gone. Files whose
-   * names aren't DASL CIDs are ignored.
+   * Bring the index in line with the files: record files it doesn't know,
+   * queued for this store's tiers as a new write would be, and report rows
+   * whose file is gone. Blobs already recorded are never queued for more
+   * tiers; copying existing blobs to a remote is always an explicit choice.
+   * Files whose names aren't DASL CIDs are ignored.
    */
   async scan(): Promise<ScanResult> {
     let added = 0;
@@ -72,12 +82,7 @@ export class LocalStore implements BlobStore {
         if (error instanceof CidError) continue;
         throw error;
       }
-      const known = this.index.blob(cid);
-      if (known) {
-        // Queues it for any tier added since it was recorded.
-        this.index.add(known, this.tiers);
-        continue;
-      }
+      if (this.index.blob(cid)) continue;
       const size = await this.files.size(cid);
       if (size === undefined) continue;
       this.index.add({ cid, size, codec }, this.tiers);

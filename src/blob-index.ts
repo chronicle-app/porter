@@ -9,6 +9,12 @@ export interface BlobRow {
   codec: number;
   /** Milliseconds since the epoch. */
   addedAt: number;
+  /**
+   * When a read of the blob last started, to within `TOUCH_INTERVAL_MS`;
+   * `null` if never read. Kept so future placement rules can tell hot blobs
+   * from cold ones.
+   */
+  lastReadAt: number | null;
 }
 
 export interface ReplicaRow {
@@ -37,6 +43,9 @@ export interface RetryPolicy {
   maxDelayMs: number;
 }
 
+/** Reads within this long of the last recorded one don't update `lastReadAt`. */
+export const TOUCH_INTERVAL_MS = 60 * 60 * 1000;
+
 export const DEFAULT_RETRY: RetryPolicy = { maxAttempts: 10, baseDelayMs: 30_000, maxDelayMs: 6 * 60 * 60 * 1000 };
 
 const MIGRATIONS = [
@@ -57,6 +66,7 @@ const MIGRATIONS = [
      PRIMARY KEY (cid, tier)
    ) STRICT;
    CREATE INDEX replicas_due ON replicas (tier, state, next_attempt_at);`,
+  `ALTER TABLE blobs ADD COLUMN last_read_at INTEGER;`,
 ];
 
 /**
@@ -86,7 +96,7 @@ export class BlobIndex {
    * Record a blob and queue it for each tier. Blobs and replicas that are
    * already recorded are left as they are.
    */
-  add(blob: Omit<BlobRow, 'addedAt'>, tiers: readonly string[], now = Date.now()): void {
+  add(blob: Pick<BlobRow, 'cid' | 'size' | 'codec'>, tiers: readonly string[], now = Date.now()): void {
     this.#transaction(() => {
       this.#db.prepare('INSERT INTO blobs (cid, size, codec, added_at) VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING').run(blob.cid, blob.size, blob.codec, now);
       const queue = this.#db.prepare("INSERT INTO replicas (cid, tier, state, updated_at) VALUES (?, ?, 'pending', ?) ON CONFLICT DO NOTHING");
@@ -95,8 +105,20 @@ export class BlobIndex {
   }
 
   blob(cid: string): BlobRow | undefined {
-    const row = this.#db.prepare('SELECT cid, size, codec, added_at FROM blobs WHERE cid = ?').get(cid);
+    const row = this.#db.prepare('SELECT cid, size, codec, added_at, last_read_at FROM blobs WHERE cid = ?').get(cid);
     return row && toBlob(row);
+  }
+
+  /**
+   * Note that a read of `cid` started. Only writes when the recorded time is
+   * at least `TOUCH_INTERVAL_MS` old, so ranged reads of a video don't each
+   * cost a write. Returns whether it wrote.
+   */
+  touch(cid: string, now = Date.now()): boolean {
+    const result = this.#db
+      .prepare('UPDATE blobs SET last_read_at = ? WHERE cid = ? AND (last_read_at IS NULL OR last_read_at <= ?)')
+      .run(now, cid, now - TOUCH_INTERVAL_MS);
+    return result.changes > 0;
   }
 
   replicas(cid: string): ReplicaRow[] {
@@ -210,7 +232,13 @@ export class BlobIndex {
 type Row = Record<string, unknown>;
 
 function toBlob(row: Row): BlobRow {
-  return { cid: String(row.cid), size: Number(row.size), codec: Number(row.codec), addedAt: Number(row.added_at) };
+  return {
+    cid: String(row.cid),
+    size: Number(row.size),
+    codec: Number(row.codec),
+    addedAt: Number(row.added_at),
+    lastReadAt: row.last_read_at === null ? null : Number(row.last_read_at),
+  };
 }
 
 function toReplica(row: Row): ReplicaRow {

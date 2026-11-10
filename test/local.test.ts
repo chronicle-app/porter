@@ -44,16 +44,35 @@ describe('LocalStore', () => {
     store.close();
   });
 
-  it('queues known blobs for a newly added tier on scan', async () => {
+  it('never queues known blobs for a newly added tier on scan', async () => {
     const root = await tempDir();
     const before = new LocalStore({ root, tiers: ['r2'] });
     await before.put(Buffer.from('hello world\n'));
     before.close();
 
     const after = new LocalStore({ root, tiers: ['r2', 's3'] });
-    await after.scan();
-    expect(after.index.replicas(HELLO).map(r => r.tier)).toEqual(['r2', 's3']);
+    expect(await after.scan()).toEqual({ added: 0, missing: [] });
+    expect(after.index.replicas(HELLO).map(r => r.tier)).toEqual(['r2']);
     after.close();
+  });
+
+  it('records when a blob is read, but not on every read', async () => {
+    const store = new LocalStore({ root: await tempDir() });
+    await store.put(Buffer.from('hello world\n'));
+    expect(store.index.blob(HELLO)?.lastReadAt).toBeNull();
+    await store.get(HELLO, { start: 0, end: 5 });
+    const first = store.index.blob(HELLO)!.lastReadAt!;
+    expect(first).toBeGreaterThan(0);
+    expect(store.index.touch(HELLO, first + 1000)).toBe(false);
+    expect(store.index.blob(HELLO)?.lastReadAt).toBe(first);
+    store.close();
+  });
+
+  it('does not record reads of blobs it does not hold', async () => {
+    const store = new LocalStore({ root: await tempDir() });
+    expect(await store.get(HELLO)).toBeUndefined();
+    expect(store.index.blob(HELLO)).toBeUndefined();
+    store.close();
   });
 
   it('reports index rows whose file is gone without removing them', async () => {
