@@ -35,6 +35,65 @@ remote add reads keys from PORTER_ACCESS_KEY_ID and PORTER_SECRET_ACCESS_KEY
 when they're set, and otherwise asks for them. Keys are never taken as flags.
 `;
 
+const FLAGS_NOTE = 'Global flags: --home DIR, --json, --quiet, --color MODE. Run `porter --help` for all commands.';
+
+/** Help for each command: how to call it, then what it does. */
+const COMMAND_HELP: Record<string, string> = {
+  status: `Usage: porter status
+
+Shows how many blobs Porter holds, and for each remote how many are
+verified, pending, uploading, failed, or not queued at all.`,
+  scan: `Usage: porter scan
+
+Records files in Porter's directory that the index doesn't know, queueing
+them for remotes that take new blobs, and lists index entries whose file is
+gone. Blobs already recorded are never queued for more remotes.`,
+  retry: `Usage: porter retry [REMOTE]
+
+Queues blobs that gave up uploading again, for one remote or all of them.`,
+  'remote list': `Usage: porter remote list
+
+Shows each remote, whether new blobs go to it, and whether its keys are stored.`,
+  'remote add': `Usage: porter remote add NAME ENDPOINT --bucket BUCKET [--region REGION] [--prefix PREFIX] [--no-new]
+
+Adds an S3-compatible remote, such as Cloudflare R2. New blobs go to it
+unless --no-new is given. Blobs you already have don't; copy them with
+porter remote backfill.
+
+  --bucket BUCKET   The bucket to write to
+  --region REGION   Defaults to auto, which R2 uses
+  --prefix PREFIX   Put every object under this prefix, like blobs/
+  --no-new          Don't send new blobs here
+
+Keys come from PORTER_ACCESS_KEY_ID and PORTER_SECRET_ACCESS_KEY when set;
+otherwise porter asks for them. They're never taken as flags, so they stay
+out of shell history.`,
+  'remote remove': `Usage: porter remote remove NAME
+
+Stops using a remote and forgets its keys. Nothing in its bucket is deleted,
+and its upload history stays in the index.`,
+  'remote backfill': `Usage: porter remote backfill NAME [--plan] [--max-size SIZE] [--since DAY] [--until DAY]
+
+Queues blobs you already have for a remote. This can mean a lot of data, so
+run it with --plan first to see how many blobs and bytes it would send.
+
+  --plan            Count, without queueing anything
+  --max-size SIZE   Only blobs up to this size, like 50MB
+  --since DAY       Only blobs added on or after this day, like 2026-01-31
+  --until DAY       Only blobs added before this day`,
+  remote: `Usage: porter remote list | add | remove | backfill
+
+  remote list                 Show remotes
+  remote add NAME ENDPOINT    Add an S3-compatible remote
+  remote remove NAME          Stop using a remote
+  remote backfill NAME        Queue blobs you already have for a remote
+
+Run \`porter remote add --help\` and so on for each one's flags.`,
+  cid: `Usage: porter cid FILE
+
+Prints the file's DASL CID, the name Porter stores it under.`,
+};
+
 const usage = (message: string, hint = 'Run `porter --help` to see the commands.') => new PorterError('usage', message, hint);
 
 export async function main(args: string[], terminal = new Terminal()): Promise<number> {
@@ -65,7 +124,11 @@ export async function main(args: string[], terminal = new Terminal()): Promise<n
     command = positionals[0] === 'remote' && positionals[1] ? `remote ${positionals[1]}` : (positionals[0] ?? 'help');
     const rest = positionals.slice(command.split(' ').length);
     if (values.help || command === 'help') {
-      terminal.result('help', { help: HELP }, () => [HELP.trimEnd()]);
+      // `porter help remote add` asks about the command after `help`.
+      const topic = command === 'help' ? rest.join(' ') : command;
+      const text = COMMAND_HELP[topic] ? `${COMMAND_HELP[topic]}\n\n${FLAGS_NOTE}\n` : HELP;
+      if (topic && topic !== 'help' && !COMMAND_HELP[topic]) throw usage(`Unknown command ${topic}`);
+      terminal.result('help', { help: text }, () => [text.trimEnd()]);
       return 0;
     }
     const root = values.home ?? defaultRoot();

@@ -34,6 +34,23 @@ describe('porter CLI', () => {
     expect(stdout).toContain('porter COMMAND');
   });
 
+  it.each([
+    [['remote', 'add', '--help'], 'porter remote add NAME ENDPOINT'],
+    [['help', 'remote', 'backfill'], '--max-size SIZE'],
+    [['status', '-h'], 'Usage: porter status'],
+  ])('prints help for one command: %j', async (args, expected) => {
+    const { code, stdout } = await porter(args);
+    expect(code).toBe(0);
+    expect(stdout).toContain(expected);
+    expect(stdout).not.toContain('Commands:');
+  });
+
+  it('refuses help for a command that does not exist', async () => {
+    const { code, data } = await json(['help', 'bogus']);
+    expect(code).toBe(2);
+    expect(data.error.code).toBe('usage');
+  });
+
   it('prints a file’s CID', async () => {
     const home = await tempDir();
     await writeFile(join(home, 'hello.txt'), 'hello world\n');
