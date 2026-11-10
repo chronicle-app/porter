@@ -1,10 +1,10 @@
-import { checkKey, chunks, collect, type ByteRange, type ByteSource, type StagedWrite, type StagingByteStore } from './store.js';
+import { checkKey, chunks, collect, type ByteRange, type ByteSource, type PutHints, type StagedWrite, type StagingByteStore } from './store.js';
 
 /** A `ByteStore` in memory, for tests and short-lived use. */
 export class MemoryByteStore implements StagingByteStore {
   readonly #items = new Map<string, Uint8Array>();
 
-  async put(key: string, source: ByteSource): Promise<void> {
+  async put(key: string, source: ByteSource, _hints?: PutHints): Promise<void> {
     checkKey(key);
     const bytes = await collect(chunks(source));
     if (!this.#items.has(key)) this.#items.set(key, Uint8Array.from(bytes));

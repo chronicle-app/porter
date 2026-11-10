@@ -7,3 +7,4 @@ export * from './s3.js';
 export * from './blobs.js';
 export * from './blob-index.js';
 export * from './local.js';
+export * from './replicate.js';

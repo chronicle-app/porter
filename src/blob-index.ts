@@ -167,6 +167,15 @@ export class BlobIndex {
     return this.#replica(cid, tier);
   }
 
+  /**
+   * Hand a claimed replica back to the queue without counting an attempt,
+   * for when the remote as a whole was unavailable rather than the blob
+   * failing.
+   */
+  release(cid: string, tier: string, now = Date.now()): void {
+    this.#set(cid, tier, "state = 'pending'", now);
+  }
+
   /** Put `failed` replicas back in the queue with a fresh count. Returns how many. */
   retryFailed(tier?: string, now = Date.now()): number {
     const result = this.#db

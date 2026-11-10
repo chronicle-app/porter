@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { mkdir, open, readdir, rename, rm, stat, type FileHandle } from 'node:fs/promises';
 import { join } from 'node:path';
-import { checkKey, chunks, type ByteRange, type ByteSource, type StagedWrite, type StagingByteStore } from './store.js';
+import { checkKey, chunks, type ByteRange, type ByteSource, type PutHints, type StagedWrite, type StagingByteStore } from './store.js';
 
 const TEMP = 'porter-tmp';
 const OBJECTS = 'objects';
@@ -23,7 +23,7 @@ export class FsByteStore implements StagingByteStore {
     return join(this.root, OBJECTS, key.slice(-3, -1), key);
   }
 
-  async put(key: string, source: ByteSource): Promise<void> {
+  async put(key: string, source: ByteSource, _hints?: PutHints): Promise<void> {
     checkKey(key);
     const staged = await this.stage();
     try {
